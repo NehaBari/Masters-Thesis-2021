@@ -1,0 +1,4 @@
+[core]
+    remote = masters-thesis-2021
+['remote "masters-thesis-2021"']
+    url = https://github.com/NehaBari/Masters-Thesis-2021.git
