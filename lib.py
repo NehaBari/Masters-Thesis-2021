@@ -222,26 +222,7 @@ def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, f
 
     return modelmatrix, train_data, train_labels, testlabels, predicted, probablities, testing_indicesM, traning_indicesM
 
-def calculate_lambda(modelmatrix, repeated):
-    # average_lambda = np.mean(sum(model.lambda_ for model in modellist),axis=0)
-    # check the shape of total_lambda
 
-    total_lambda = np.zeros((36, 36), dtype='float')
-    print(repeated)
-    for index in range(repeated):
-        print(index)
-        lambdaperfold = np.zeros((36, 36), dtype='float')
-
-        for modelin in modelmatrix[index, :]:
-            lambdaperfold = lambdaperfold + modelin.lambda_
-
-        lambdaperfold = lambdaperfold / np.shape(modelmatrix)[1]
-
-        total_lambda = total_lambda + lambdaperfold
-
-    total_lambda = total_lambda / repeated
-
-    return total_lambda
 
 
 def eigendecomposition(average_lambda):
@@ -260,17 +241,13 @@ def correction_matrix(eigvectorscenter):
     I = np.identity(N)
     outerproduct = np.zeros((N,N))
     for i in range(K):
-        # check this
         outerproduct +=  np.outer(eigvectorscenter.T[:,i],eigvectorscenter[i,:])
-        outerproduct1 =  np.outer(eigvectorscenter.T[:,0],eigvectorscenter[0,:])
-        outerproduct2 =  np.outer(eigvectorscenter.T[:,1],eigvectorscenter[1,:])
     correctionmatrix = I-outerproduct
     return correctionmatrix
 
 
 
 def calculate_prototype(modelmatrix,repeated,dimension,scalarmodel):
-    #prototypeaverage = np.zeros((prototype,dimensions),dtype='float')
     numberofprototypes = len(modelmatrix[0][0].prototypes_)
     prototypeaverage = np.zeros((numberofprototypes,dimension),dtype='float')
     modellist = list(chain.from_iterable(zip(*modelmatrix)))
@@ -281,8 +258,24 @@ def calculate_prototype(modelmatrix,repeated,dimension,scalarmodel):
     return prototypeaverage/len(modellist)
 
 
+def average_lambda(modelmatrix,dimension):
+    # average_lambda = np.mean(sum(model.lambda_ for model in modellist),axis=0)
+    # check the shape of total_lambda
+    modellist = list(chain.from_iterable(zip(*modelmatrix)))
+    print(len(modellist))
+    for i in range(len(modellist)):
+        if i ==0:
+            data = modellist[i].lambda_
+        else:
+            data = np.vstack((modellist[i].lambda_,data))
+    data = data.reshape(len(modellist),dimension,dimension)
+    mean = np.mean(data,axis=0)
+    return mean
 
-def diagonal_average_permodel(modelmatrix, dim):
+
+
+
+def average_lambda_diagonal(modelmatrix):
     # element wise addition by default in numpy
 
     modellist = list(chain.from_iterable(zip(*modelmatrix)))
@@ -290,11 +283,15 @@ def diagonal_average_permodel(modelmatrix, dim):
         if i == 0:
             data = np.diagonal(modellist[i].lambda_)
         else:
+            # data for i = 0 will be stacked at the bottom for the last iteration
             data = np.vstack((np.diagonal(modellist[i].lambda_), data))
+
     avg = np.mean(data, axis=0)
     std = np.std(data, axis=0)
 
     return avg, std
+
+
 
 
 def check_orthogonality(centermodel,diseasemodel,dimensions,repeated,folds,eigenvectorscenter):
