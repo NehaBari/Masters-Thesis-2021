@@ -158,14 +158,45 @@ def model_definition_disease(correctionmatrix,logger):
     return model1
 
 
+def not_sampled(scalar, data, labels, correctionmatrix, disease):
+    # training an individual model
+    logger = ProcessLogger()
+    if disease:
+        model = model_definition_disease(correctionmatrix, logger)
+    else:
+        model = model_definition_center(logger)
+
+    pipeline = make_pipeline(scalar, model)
+    pipeline.fit(data, labels)
+    predicted = pipeline.predict(data)
+    return predicted
+
+def sampled(scalar, data, labels, correctionmatrix, disease):
+    # training an individual model
+    logger = ProcessLogger()
+    if disease:
+        model = model_definition_disease(correctionmatrix, logger)
+    else:
+        model = model_definition_center(logger)
+
+    oversample = RandomOverSampler(sampling_strategy='minority')
+    finaldatacenter_oversampled, Finallabelscenter_oversampled = oversample.fit_resample(data, labels)
+
+    pipeline = make_pipeline(scalar, model)
+    pipeline.fit(data, labels)
+    predicted = pipeline.predict(data)
+
+    return pipeline,predicted
+
+
 def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, folds):
     modelmatrix = np.zeros((repeated, folds), dtype=object)
-    train_data = np.zeros((repeated, folds), dtype=object)
-    train_labels = np.zeros((repeated, folds), dtype=object)
+    train_dataM = np.zeros((repeated, folds), dtype=object)
+    train_labelsM = np.zeros((repeated, folds), dtype=object)
     # each entry will store the test labels and the predicted labels
-    testlabels = np.zeros((repeated, folds), dtype=object)
-    predicted = np.zeros((repeated, folds), dtype=object)
-    probablities = np.zeros((repeated, folds), dtype=object)
+    testlabelsM = np.zeros((repeated, folds), dtype=object)
+    predictedM = np.zeros((repeated, folds), dtype=object)
+    probablitiesM = np.zeros((repeated, folds), dtype=object)
     testing_indicesM = np.zeros((repeated, folds), dtype=object)
     traning_indicesM = np.zeros((repeated, folds), dtype=object)
 
@@ -179,48 +210,31 @@ def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, f
         kfold = StratifiedKFold(folds, shuffle=True)
 
         for k, (training_indices, testing_indices) in enumerate(kfold.split(data, label)):
-            logger = ProcessLogger()
-            if disease == False:
-                model = model_definition_center(logger)
-                # print('in this')
-                # print(type(model))
-            else:
-                # model = model_definition_center()
-                model = model_definition_disease(correctionmatrix,logger)
-
-            correct = 0
             trainX, trainY, testX, testY = data[training_indices], label[training_indices], data[testing_indices],label[testing_indices]
 
-            # oversampling done and z transform applied
-            oversample = RandomOverSampler(sampling_strategy='minority')
-            trainX, trainY = oversample.fit_resample(trainX, trainY)
+            pipeline,_ = sampled(scalar, trainX, trainY, correctionmatrix, disease)
+            predicted = pipeline.predict(testX)
 
-            #applying z transform on training data only
-            pipeline = make_pipeline(scalar, model)
-            pipeline.fit(trainX, trainY)
-            predictedlabels = pipeline.predict(testX)
-
-            ##############################train data############################
+            ##############################assigning to respectives matrices############################
 
             modelmatrix[repeated, k] = pipeline[1]
-            train_data[repeated, k] = pipeline.transform(trainX)
-            train_labels[repeated, k] = trainY
-
+            train_dataM[repeated, k] = pipeline.transform(trainX)
+            train_labelsM[repeated, k] = trainY
             traning_indicesM[repeated, k] = training_indices
-            ##############################test data############################
+
             probabilties = pipeline.predict_proba(testX)
 
-            probablities[repeated, k] = probabilties
+            probablitiesM[repeated, k] = probabilties
 
-            testlabels[repeated, k] = testY
+            testlabelsM[repeated, k] = testY
 
-            predicted[repeated, k] = predictedlabels
+            predictedM[repeated, k] = predicted
 
             testing_indicesM[repeated, k] = testing_indices
 
 
 
-    return modelmatrix, train_data, train_labels, testlabels, predicted, probablities, testing_indicesM, traning_indicesM
+    return modelmatrix, train_dataM, train_labelsM, testlabelsM, predictedM, probablitiesM, testing_indicesM, traning_indicesM
 
 
 
@@ -314,6 +328,8 @@ def transform1(X,eigenvaluesaverage,eigenvectoraverage,scale):
     if scale:
         return np.matmul(X, eigenvectoraverage.T)
     return np.matmul(X, eigenvectoraverage.T)
+
+
 
 
 def confusionmatrixc(test, predicted):
