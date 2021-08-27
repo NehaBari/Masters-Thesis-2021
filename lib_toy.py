@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklvq import GMLVQ
 from itertools import chain
 from sklearn.metrics import confusion_matrix
-
+import seaborn as sns
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import roc_curve, auc
 
@@ -18,17 +18,18 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_array
 
 params = {'legend.fontsize': 'medium',
-          'figure.figsize': (23, 12),
+          'figure.figsize': (23, 10),
           'axes.labelsize': 'large',
           'axes.titlesize': 'medium',
           'xtick.labelsize': 'medium',
           'ytick.labelsize': 'medium',
           'lines.linewidth': 4,
-          'axes.facecolor': 'none'}
+           'axes.facecolor': 'none'}
 
 plt.rcParams.update(params)
 plt.rcParams.update({'font.size': 22})
 plt.rcParams["font.weight"] = "bold"
+plt.rcParams['axes.linewidth'] = 4
 
 
 def getdata():
@@ -128,10 +129,9 @@ def sampled(scalar, data, labels, correctionmatrix, disease):
 
 def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, folds):
     modelmatrix = np.zeros((repeated, folds), dtype=object)
-    pipeline_kfold = np.zeros((repeated, folds), dtype=object)
-    pipeline_pipeline = np.zeros((repeated, folds), dtype=object)
 
 
+    accuracies = np.zeros((repeated, folds), dtype=object)
 
     train_dataM = np.zeros((repeated, folds), dtype=object)
     ############################################################
@@ -158,16 +158,17 @@ def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, f
                                            label[testing_indices]
             pipeline = not_sampled(scalar, trainX, trainY, correctionmatrix, disease)
             predicted = pipeline.predict(testX)
-            pipeline_pipeline[repeated,k] = pipeline
             ##############################assigning to respectives matrices############################
             # ask about the fitted model
-            pipeline_kfold[repeated,k] = pipeline[0]
             modelmatrix[repeated, k] = pipeline[1]
             # stroing z transfomred data. CAn choose to store no z transfomrd data as well
             # train_dataM[repeated, k] = pipeline.transform(trainX,True)
             train_dataM[repeated, k] = trainX
             train_labelsM[repeated, k] = trainY
             traning_indicesM[repeated, k] = training_indices
+
+            accuracy = 0
+            correct = 0
 
             probabilties = pipeline.predict_proba(testX)
 
@@ -179,9 +180,19 @@ def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, f
 
             predictedM[repeated, k] = predicted
 
+
+            for i in range(len(predicted)):
+                if(predicted[i]==testY[i]):
+                    correct = correct+1
+            accuracy = correct / len(testY)
+
+            accuracies[repeated, k] = accuracy
+
+
             testing_indicesM[repeated, k] = testing_indices
 
-    return modelmatrix, train_dataM, train_labelsM, testlabelsM, predictedM, probablitiesM, testing_indicesM, traning_indicesM, pipeline_kfold,pipeline_pipeline,test_dataM
+
+    return modelmatrix, train_dataM, train_labelsM, testlabelsM, predictedM, probablitiesM, testing_indicesM, traning_indicesM,accuracies
 
 
 def eigendecomposition(average_lambda):
@@ -257,23 +268,22 @@ def transform1(X, eigenvaluesaverage, eigenvectoraverage, scale):
 
 def center(center_data, center_labels, disease, correctionmatrix, repeated, scalar, folds, dimension,
            leading_eigenvectors):
-    centermodel, trainc_data, trainc_labels, testlabelsc, predictedc, probabiltiesc, testing_indicesC, training_indicesC, pipeline_kfold, pipeline_pipeline,test_dataM = train_modelkfold(
+    centermodel, trainc_data, trainc_labels, testlabelsc, predictedc, probabiltiesc, testing_indicesC, training_indicesC,accuracies = train_modelkfold(
         center_data, center_labels, disease, correctionmatrix, repeated, scalar, folds)
     average_lambda_center = average_lambda(centermodel, dimension)
     avgc, stdc = average_lambda_diagonal(centermodel)
     eigenvaluescenter, eigenvectorscenter = eigendecomposition(average_lambda_center)
     correctionmatrix_return = correction_matrix(eigenvectorscenter, dimension, leading_eigenvectors)
-    return centermodel, testlabelsc, predictedc, probabiltiesc, average_lambda_center, avgc, stdc, eigenvaluescenter, eigenvectorscenter, correctionmatrix_return, pipeline_kfold, pipeline_pipeline,test_dataM
-
+    return centermodel, testlabelsc, predictedc, probabiltiesc, average_lambda_center, avgc, stdc, eigenvaluescenter, eigenvectorscenter, correctionmatrix_return, accuracies
 
 def disease_function(disease_data, disease_labels, disease, correctionmatrix, repeated, scalar, folds, dimension):
-    diseasemodel, train_dataD, train_labelsD, testlabelsd, predictedd, probablitiesd, testing_indicesD, traning_indicesD, pipeline_kfold, pipeline_pipeline,test_dataM = train_modelkfold(
+    diseasemodel, train_dataD, train_labelsD, testlabelsd, predictedd, probablitiesd, testing_indicesD, traning_indicesD ,accuracies= train_modelkfold(
         disease_data, disease_labels, disease, correctionmatrix, repeated, scalar, folds)
     average_lambda_disease = average_lambda(diseasemodel, dimension)
     avgd, stdd = average_lambda_diagonal(diseasemodel)
     eigenvaluesdisease, eigenvectorsdisease = eigendecomposition(average_lambda_disease)
-    return diseasemodel, testlabelsd, predictedd, probablitiesd, average_lambda_disease, avgd, stdd, eigenvaluesdisease, eigenvectorsdisease, pipeline_kfold, train_dataD, train_labelsD, pipeline_pipeline,test_dataM
 
+    return diseasemodel, testlabelsd, predictedd, probablitiesd, average_lambda_disease, avgd, stdd, eigenvaluesdisease, eigenvectorsdisease, accuracies
 
 def confusionmatrixc(test, predicted):
     oneone, onetwo, twoone, twotwo = confusion_matrix(test, predicted, labels=['A', 'B']).ravel()
@@ -404,9 +414,8 @@ def plot_roc_center(testlabels, probabilties, plotdict_tpr1, plotdict_fpr1, plot
                                         drop_intermediate=True)
         roc_auc1[j] = auc(fpr1[j], tpr1[j])
 
-    figsize = (10, 10)
     # roc for each class
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots()
 
     ax.plot([0, 1], [0, 1], 'k--')
     # ax.set_xlim([0.0, 1.0])
@@ -555,8 +564,8 @@ def visualizeSinglemodeld(pipeline,model, data, labels, typeofdata):
     for i, txt in enumerate(labelss):
         ax.annotate(labelss[i], (x_m[i], y_m[i]))
     ax.scatter(x_m, y_m, c=colors, s=500, alpha=0.8, edgecolors="black")
-    ax.set_xlabel("First eigenvector")
-    ax.set_ylabel("Second eigenvector")
+    ax.set_xlabel("Projection on the 1st Eigenvector of Λ")
+    ax.set_ylabel("Projection on the 2nd Eigenvector of Λ")
     ax.legend()
     ax.grid(True)
     fig.savefig('disease_single_model' + typeofdata + '.png')
@@ -602,31 +611,97 @@ def visualizeSinglemodelc(pipeline,model, datac, labels, typeofdata):
 
     # x_extraticks = np.linspace(np.min(datac[:, 0]), np.max(datac[:, 0]), 6)
     # ax.set_xticks(list(x_extraticks))
-    ax.set_xlabel("First eigenvector")
-    ax.set_ylabel("Second eigenvector")
+    ax.set_xlabel("Projection on the 1st Eigenvector of Λ")
+    ax.set_ylabel("Projection on the 2nd Eigenvector of Λ")
     ax.legend()
     ax.grid(True)
     fig.savefig('center_singlemodel' + typeofdata + '.png')
 
 
+# a function to plot the confusion matrix for centre
+def plot_confusionmatrix_centre(testlabels, predicted, accuracieslist):
+    accuracies_one = list(chain.from_iterable(zip(*accuracieslist)))
+    print(sum(accuracies_one) / len(accuracies_one))
+
+    test_list = np.concatenate(list(chain.from_iterable(zip(*testlabels))), axis=0)
+    predicted_list = np.concatenate(list(chain.from_iterable(zip(*predicted))), axis=0)
+
+    oneonec, onetwoc, twoonec, twotwoc = confusionmatrixc(test_list,
+                                                          predicted_list)
+
+    cmc_c = np.array([[oneonec, onetwoc],
+                      [twoonec, twotwoc]])
+
+    cmc_c = cmc_c.astype('float') / cmc_c.sum(axis=1)[:, np.newaxis]
+
+    # Transform to df for easier plotting
+    cm_df = pd.DataFrame(cmc_c, index=['A', 'B'], columns=['A', 'B'])
+
+    plt.figure()
+    sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
+
+    plt.title('center data')
+    plt.ylabel('True label')
+
+    plt.xlabel('Predicted label')
+    plt.savefig('confusion_matrix_toy_centre.png')
+    plt.show()
+
+
+# a function to plot the confusion matrix for centre
+def plot_confusionmatrix_disease(testlabels, predicted, accuracieslist):
+    accuracies_one = list(chain.from_iterable(zip(*accuracieslist)))
+    print(sum(accuracies_one) / len(accuracies_one))
+
+    test_list = np.concatenate(list(chain.from_iterable(zip(*testlabels))), axis=0)
+    predicted_list = np.concatenate(list(chain.from_iterable(zip(*predicted))), axis=0)
+
+    oneonec, onetwoc, twoonec, twotwoc = confusionmatrixd(test_list,
+                                                          predicted_list)
+
+    cmc_d = np.array([[oneonec, onetwoc],
+                      [twoonec, twotwoc]])
+
+    cmc_d = cmc_d.astype('float') / cmc_d.sum(axis=1)[:, np.newaxis]
+
+    # Transform to df for easier plotting
+    cm_df = pd.DataFrame(cmc_d, index=['1', '2'], columns=['1', '2'])
+
+    plt.figure()
+    sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
+
+    plt.title('Disease data')
+    plt.ylabel('True label')
+
+    plt.xlabel('Predicted label')
+    plt.savefig('confusion_matrix_toy_disease.png')
+    plt.show()
+
+
+
+
 # Plot the eigenvalues of the eigenvectors of the relevance matrix.
-def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda,std,d, typeofdata):
+def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda,std,d, typeofdata,ymin, ymax):
+
     fig, ax = plt.subplots()
     ax.bar(range(0, len(eigenvalues)), eigenvalues)
     if d == "disease":
         for i in range(1):
-            plt.text(i , eigenvalues[i],  "{:.2f}".format(eigenvalues[i]),fontsize=14)
+            plt.text(i, eigenvalues[i],  "{:.2f}".format(eigenvalues[i]),fontsize=14)
     else:
         plt.text(0, eigenvalues[0], "{:.2f}".format(eigenvalues[0]),fontsize=14)
+    ax.set_ylim(0, 1)
     ax.set_ylabel("Eigenvalue")
     ax.set_xlabel("Feature")
-    ax.axhline(y=eigenvalues[0],color ='green', lw = 2)
+    ax.axhline(y=eigenvalues[0],color ='red', lw = 2)
     ax.grid(False)
-    fig.savefig(d + 'Eigenvalues_with' + typeofdata + '.png')
+    fig.savefig( d + 'Eigenvalues_without' + typeofdata + '.png')
 
     # Plot the first two eigenvectors of the relevance matrix, which  is called `omega_hat`.
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[0, :])
+    ax.set_ylim(ymin[0], ymax[0])
+    ax.axhline(0, color='k')
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
@@ -635,19 +710,21 @@ def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda,std,
     fig, ax = plt.subplots()
     #fig.suptitle("Second Eigenvector with correction " + d + typeofdata + "data")
     ax.bar(feature_names, eigenvectors[1, :])
+    ax.set_ylim(ymin[1], ymax[1])
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
     fig.savefig(d + 'Secondeigenvector_with' + typeofdata +'.png')
 
     fig, ax = plt.subplots()
-    ax.bar(feature_names, averagelambda, yerr=std,ecolor='gray')
+    ax.bar(feature_names, averagelambda, yerr=std ,ecolor='gray')
     for i, v in enumerate(np.linspace(0, 10, 10)):
         plt.text(i, averagelambda[i] + 0.000002, "{:.2f}".format(averagelambda[i]),
                  ha='center',
                  va="bottom", color='forestgreen', fontsize=16)
+    ax.set_ylim(ymin[2], ymax[2])
     ax.set_ylabel("Relevance")
-    ax.set_xlabel("Feature")
+    ax.set_xlabel("Diagonal elements of Λ")
     ax.grid(False)
     fig.savefig(d + 'Relevancematrix_with' + typeofdata + '.png')
 
@@ -657,7 +734,7 @@ def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda,std,
 
 
 # Plot the eigenvalues of the eigenvectors of the relevance matrix.
-def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelambda, std ,d, typeofdata):
+def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelambda, std ,d, typeofdata,ymin, ymax):
 
     fig, ax = plt.subplots()
     ax.bar(range(0, len(eigenvalues)), eigenvalues)
@@ -666,6 +743,7 @@ def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelamb
             plt.text(i, eigenvalues[i],  "{:.2f}".format(eigenvalues[i]),fontsize=14)
     else:
         plt.text(0, eigenvalues[0], "{:.2f}".format(eigenvalues[0]),fontsize=14)
+    ax.set_ylim(0, 1)
     ax.set_ylabel("Eigenvalue")
     ax.set_xlabel("Feature")
     ax.axhline(y=eigenvalues[0],color ='red', lw = 2)
@@ -674,6 +752,10 @@ def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelamb
 
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[0, :])
+    for i, v in enumerate(np.linspace(0, 10, 10)):
+        plt.text(i, eigenvectors[0, i], "{:.2f}".format(eigenvectors[0, i]), color='k', fontsize=14)
+    ax.axhline(0, color='k')
+    ax.set_ylim(ymin[0], ymax[0])
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
@@ -681,6 +763,8 @@ def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelamb
 
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[1, :])
+    ax.axhline(0, color='k')
+    ax.set_ylim(ymin[1], ymax[1])
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
@@ -693,13 +777,14 @@ def ploteigenvalueswithout(eigenvalues, eigenvectors, feature_names, averagelamb
         plt.text(i, averagelambda[i] + 0.000002, "{:.2f}".format(averagelambda[i]),
                  ha='center',
                  va="bottom", color='orangered', fontsize=14)
+    ax.set_ylim(ymin[2], ymax[2])
     ax.set_ylabel("Relevance")
-    ax.set_xlabel("Feature")
+    ax.set_xlabel("Diagonal elements of Λ")
     ax.grid(False)
     fig.savefig(d + 'Relevancematrix_without' + typeofdata + '.png')
 
 
-def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda, d, typeofdata):
+def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda, d, typeofdata,ymin, ymax):
     fig, ax = plt.subplots()
     ax.bar(range(0, len(eigenvalues)), eigenvalues)
     if d == "disease":
@@ -707,6 +792,7 @@ def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda
             plt.text(i, eigenvalues[i], "{:.2f}".format(eigenvalues[i]), fontsize=14)
     else:
         plt.text(0, eigenvalues[0], "{:.2f}".format(eigenvalues[0]), fontsize=14)
+    ax.set_ylim(0, 1)
     ax.set_ylabel("Eigenvalue")
     ax.set_xlabel("Feature")
     ax.axhline(y=eigenvalues[0], color='red', lw=2)
@@ -716,6 +802,10 @@ def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda
     # Plot the first two eigenvectors of the relevance matrix, which  is called `omega_hat`.
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[0, :])
+    for i, v in enumerate(np.linspace(0, 10, 10)):
+        plt.text(i, eigenvectors[0, i], "{:.2f}".format(eigenvectors[0, i]), color='k', fontsize=14)
+    ax.axhline(0, color='k')
+    ax.set_ylim(ymin[0], ymax[0])
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
@@ -723,6 +813,8 @@ def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda
 
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[1, :])
+    ax.axhline(0, color='k')
+    ax.set_ylim(ymin[1], ymax[1])
     ax.set_ylabel("Weight")
     ax.set_xlabel("Feature")
     ax.grid(False)
@@ -732,7 +824,8 @@ def ploteigenvaluesingle(eigenvalues, eigenvectors, feature_names, averagelambda
     ax.bar(feature_names, averagelambda)
     for i, v in enumerate(np.linspace(0, 10, 10)):
         plt.text(i, averagelambda[i], "{:.2f}".format(averagelambda[i]), color='k', fontsize=14)
+    ax.set_ylim(0, 0.7)
     ax.set_ylabel("Relevance")
-    ax.set_xlabel("Feature")
+    ax.set_xlabel("Diagonal elements of Λ")
     ax.grid(False)
     fig.savefig(d + 'Relevance_matrix_single' + typeofdata + '.png')
