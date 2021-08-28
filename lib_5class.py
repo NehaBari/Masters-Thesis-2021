@@ -934,7 +934,8 @@ def plot_confusionmatrix_centre(testlabels, predicted, accuracieslist):
     # Transform to df for easier plotting
     cm_df = pd.DataFrame(cmc_c, index=['CUN', 'UGOSM', 'UMCG'], columns=['CUN', 'UGOSM', 'UMCG'])
 
-    plt.figure(figsize=(5.5, 4))
+    #plt.figure(figsize=(5.5, 4))
+    plt.figure(figsize = (8, 6))
     sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
 
     plt.title('center data')
@@ -971,7 +972,8 @@ def plot_confusionmatrix_disease(testlabels, predicted, accuracieslist):
     cm_df = pd.DataFrame(cmc_d, index=['PDCUN', 'PDUGOSM', 'PDUMCG', 'ADUGOSM', 'ADUMCG'],
                          columns=['PDCUN', 'PDUGOSM', 'PDUMCG', 'ADUGOSM', 'ADUMCG'])
 
-    plt.figure()
+    #plt.figure()
+    plt.figure(figsize=(8, 6))
     sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
 
     plt.title('Disease data')

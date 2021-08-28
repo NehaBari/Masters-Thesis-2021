@@ -360,7 +360,7 @@ def confusionmatrix_6class(testlabelmatrix, predictedlabelmatrix, type):
     return one_fpr, one_tpr, two_fpr, two_tpr
 
 
-def center_dict(one_fpr, one_tpr, two_fpr, two_tpr, one_fpr1, one_tpr1, two_fpr1, two_tpr1, repeated, folds):
+def dictionary(one_fpr, one_tpr, two_fpr, two_tpr, one_fpr1, one_tpr1, two_fpr1, two_tpr1, repeated, folds):
     plotdict_tpr1 = one_tpr1, two_tpr1
     plotdict_fpr1 = one_fpr1, two_fpr1
 
@@ -424,17 +424,11 @@ def plot_roc_center(testlabels, probabilties, plotdict_tpr1, plotdict_fpr1, plot
     ax.set_ylabel('True Positive Rate')
     ax.set_title('Receiver operating characteristic example')
 
-    # for k1 in range(len(testlist)):
-    #     for i1 in range(len(n_classes)):
-    #         ax.plot(fpru[k1][i1], tpru[k1][i1], label='_nolegend_', color=colorrange[i1])
-    #
-    #         # ax.plot(PDCUN_fpr[i], PDCUN_fpr[i],  marker="o", markersize="12")
-    #         ax.plot(plotdict_fpr[k1][i1], plotdict_tpr[k1][i1], color=colorrange[i1])  # ,marker="o", markersize="12")
 
-    for k1 in range(len(testlist)):
-        for i1 in range(1):
-            ax.plot(fpru[k1][1], tpru[k1][1], label='_nolegend_', color=colorrange[1])
-            ax.plot(plotdict_fpr[k1][1], plotdict_tpr[k1][1], color=colorrange[1])
+    # for k1 in range(len(testlist)):
+    #     for i1 in range(1):
+    #         ax.plot(fpru[k1][1], tpru[k1][1], label='_nolegend_', color=colorrange[1])
+    #         ax.plot(plotdict_fpr[k1][1], plotdict_tpr[k1][1], color=colorrange[1])
 
     ax.plot(fpr1[1], tpr1[1], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[1], n_classes[1]),
             color=colorrange2[1])
@@ -501,10 +495,7 @@ def plot_roc_disease(testlabels, probabilties, plotdict_tpr1, plotdict_fpr1, plo
     ax.set_ylabel('True Positive Rate')
     ax.set_title('Receiver operating characteristic example')
 
-    for k1 in range(len(testlist)):
-        for i1 in range(1):
-            ax.plot(fpru[k1][1], tpru[k1][1], label='_nolegend_', color=colorrange[1])
-            ax.plot(plotdict_fpr[k1][1], plotdict_tpr[k1][1], color=colorrange[1])
+
 
     ax.plot(fpr1[1], tpr1[1], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[1], n_classes[1]),
             color=colorrange2[1])

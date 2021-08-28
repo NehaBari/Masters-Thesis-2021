@@ -1,4 +1,3 @@
-# a lib file for 2 class early and late PD
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
@@ -12,14 +11,13 @@ from sklearn.pipeline import make_pipeline
 from sklearn.metrics import roc_curve, auc
 import seaborn as sns
 
-from imblearn.over_sampling import SMOTE
-
 matplotlib.rc("xtick", labelsize="small")
 matplotlib.rc("ytick", labelsize="small")
 
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils.validation import check_array
+
 
 
 params = {'legend.fontsize': 'medium',
@@ -43,6 +41,7 @@ def getdata():
 
     labelsfinal = labels + labelscenter
 
+    # better way to perform this
     labelsdiseases1 = np.where(labelsfinal == 'HCUMCG')
     centerlabels1 = labelsfinal[labelsdiseases1]
     labelsdiseases2 = np.where(labelsfinal == 'HCUGOSM')
@@ -50,6 +49,7 @@ def getdata():
     labelsdiseases3 = np.where(labelsfinal == 'HCCUN')
     centerlabels3 = labelsfinal[labelsdiseases3]
 
+    # better way to perform this
     centerlabels = np.concatenate((centerlabels1, centerlabels2, centerlabels3))
     centerdata = data[labelsdiseases1]
     centerdata = np.concatenate((centerdata, data[labelsdiseases2]))
@@ -61,68 +61,58 @@ def getdata():
 
 
 def preprocess_data(data, labels, labelscenter):
-
-
-
-
-
-    # removing UMCG
     ######UMCG indices##########
 
     # ADindices = np.where(labels=='AD')
 
     UMCGindices = np.where(labelscenter == 'UMCG')
 
-    # fetch umcg indices
+    # Remove UMCH 1st from data, centerlabels and diseaselabels
+
     datanoUMCG = np.delete(data, UMCGindices, axis=0)
 
-    # center
-    # UMCG,CUN,UGOSM
+    labelsnoUMCG = np.delete(labels, UMCGindices, axis=0)
+
     labelscenternoUMCG = np.delete(labelscenter, UMCGindices, axis=0)
 
-    # get AD indices
-
-    # disease
-    # remove UMCG
-    labelsdiseasenoUMCG = np.delete(labels, UMCGindices, axis=0)
+    ############################################
 
     ### get AD indices
-    ADindices = np.where(labelsdiseasenoUMCG == 'AD')
 
-    ####################### Remove adindices from center and disease##################################
-    centerdata_noAD = np.delete(datanoUMCG, ADindices, axis=0)
+    ADindices = np.where(labelsnoUMCG == 'AD')
 
-    # Final center labels after AD is removed
-    centerlabels_noAD = np.delete(labelscenternoUMCG, ADindices, axis=0)
+    # datacenter is the data with no umcg and AD incides
 
-    # remove AD
-    diseasedata_noAD = np.delete(datanoUMCG, ADindices, axis=0)
+    finaldatacenter = np.delete(datanoUMCG, ADindices, axis=0)
+
+    # Final center labels with no AD and UMCG
+    finalcenterlabels = np.delete(labelscenternoUMCG, ADindices, axis=0)
+
     # labelsnoAD for disease data
-    diseaselabels_noAD = np.delete(labelsdiseasenoUMCG, ADindices, axis=0)
+    labelsnoAD = np.delete(labelsnoUMCG, ADindices, axis=0)
 
-    ####################### Remove PD indices from center##################################
+    PDindices = np.where(labelsnoAD == 'PD')
 
-    PDindices = np.where(diseaselabels_noAD == 'PD')
+    #################  FINAL DATA CENTER 1 is FINAL###################
 
-    ################# FINAL Center data and labels###################
+    final_center_data = np.delete(finaldatacenter, PDindices, axis=0)
 
-    final_center_data = np.delete(centerdata_noAD, PDindices, axis=0)
+    final_center_labels = np.delete(finalcenterlabels, PDindices, axis=0)
 
-    final_center_labels = np.delete(centerlabels_noAD, PDindices, axis=0)
+    ###############################################
 
-    ################# FINAL disease data and labels###################
-    healthycontrolindices = np.where(diseaselabels_noAD == 'HC')
+    final_data_disease = finaldatacenter
 
+    final_labels_disease = labelsnoAD + finalcenterlabels
 
-    final_data_disease = np.delete(diseasedata_noAD, healthycontrolindices, axis=0)
+    HC_UGOSM_Index = np.where(final_labels_disease == 'HCUGOSM')
+    HC_CUN_Index = np.where(final_labels_disease == 'HCCUN')
+    final_labels_disease[HC_UGOSM_Index] = 'HC'
+    final_labels_disease[HC_CUN_Index] = 'HC'
 
-    diseaselabels_noHC = np.delete(diseaselabels_noAD, healthycontrolindices, axis=0)
+    HCindices = HC_UGOSM_Index + HC_CUN_Index
 
-    centerlabels_noHC = np.delete(centerlabels_noAD, healthycontrolindices, axis=0)
-
-    final_labels_disease = diseaselabels_noHC + centerlabels_noHC
-
-    return final_center_data, final_center_labels, final_data_disease, final_labels_disease
+    return final_center_data, final_center_labels, final_data_disease, final_labels_disease, HCindices
 
 
 class ProcessLogger:
@@ -146,7 +136,7 @@ def model_definition_center(logger):
         solver_type="wgd",
         solver_params={"max_runs": 50, "step_size": np.array([0.05, 0.03]), "callback": logger},
         # solver_params={"max_runs": 10,"batch_size":1,"step_size": np.array([0.1, 0.05])},
-        random_state=1428)
+        random_state=1428, )
 
     return model
 
@@ -218,11 +208,11 @@ def train_modelkfold(data, label, disease, correctionmatrix, repeated, scalar, f
             trainX, trainY, testX, testY = data[training_indices], label[training_indices], data[testing_indices], \
                                            label[testing_indices]
 
-            accuracy = 0
-            correct = 0
-
             pipeline = not_sampled(scalar, trainX, trainY, correctionmatrix, disease)
             predicted = pipeline.predict(testX)
+
+            accuracy = 0
+            correct = 0
 
             ##############################assigning to respectives matrices############################
             # ask about the fitted model
@@ -268,6 +258,18 @@ def correction_matrix(eigvectorscenter,dimension,leading_eigenvectors):
         outerproduct += np.outer(eigvectorscenter.T[:, i], eigvectorscenter[i, :])
     correctionmatrix = I - outerproduct
     return correctionmatrix
+
+
+def calculate_prototype(modelmatrix, repeated, dimension, scalarmodel):
+    numberofprototypes = len(modelmatrix[0][0].prototypes_)
+    prototypeaverage = np.zeros((numberofprototypes, dimension), dtype='float')
+    modellist = list(chain.from_iterable(zip(*modelmatrix)))
+    scalarlist = list(chain.from_iterable(zip(*scalarmodel)))
+    for modelin in range(len(modellist)):
+        for i in range(numberofprototypes):
+            prototypeaverage[i] = np.add(prototypeaverage[i],
+                                         scalarlist[modelin].inverse_transform(modellist[modelin].prototypes_[i]))
+    return prototypeaverage / len(modellist)
 
 
 def average_lambda(modelmatrix, dimension):
@@ -320,9 +322,8 @@ def transform1(X, eigenvaluesaverage, eigenvectoraverage, scale):
     return np.matmul(X, eigenvectoraverage.T)
 
 
-
 def center(center_data,center_labels,disease,correctionmatrix,repeated,scalar,folds,dimension,leading_eigenvectors):
-    centermodel, trainc_data, trainc_labels, testlabelsc, predictedc, probabiltiesc, testing_indicesC, training_indicesC,accuracies = train_modelkfold(center_data,center_labels,disease,correctionmatrix,repeated,scalar,folds)
+    centermodel, trainc_data, trainc_labels, testlabelsc, predictedc, probabiltiesc, testing_indicesC, training_indicesC,accuracies= train_modelkfold(center_data,center_labels,disease,correctionmatrix,repeated,scalar,folds)
     average_lambda_center = average_lambda(centermodel,dimension)
     avgc, stdc = average_lambda_diagonal(centermodel)
     eigenvaluescenter,eigenvectorscenter = eigendecomposition(average_lambda_center)
@@ -339,6 +340,8 @@ def disease_function(disease_data,disease_labels,disease,correctionmatrix,repeat
 
 
 
+
+
 def confusionmatrixc(test, predicted):
     CUNCUN, CUNUGOSM, UGOSMCUN, UGOSMUGOSM = confusion_matrix(test, predicted, labels=['CUN', 'UGOSM']).ravel()
 
@@ -350,6 +353,12 @@ def confusionmatrix_61classc(testlabelmatrix, predictedlabelmatrix):
     predicteddsinglec = np.concatenate(list(chain.from_iterable(zip(*predictedlabelmatrix))), axis=0)
 
     np.seterr(divide='ignore', invalid='ignore')
+
+    # CUN_tpr = dict()
+    # CUN_fpr = dict()
+    #
+    # UGOSM_tpr = dict()
+    # UGOSM_fpr = dict()
 
     CUNCUN, CUNUGOSM, UGOSMCUN, UGOSMUGOSM = confusionmatrixc(testlabelsdsinglec, predicteddsinglec)
 
@@ -404,10 +413,14 @@ def confusionmatrix_6classc(testlabelmatrix, predictedlabelmatrix):
 
 
 def center_dict(CUN_fpr, CUN_tpr, UGOSM_fpr, UGOSM_tpr, CUN_fpr1, CUN_tpr1, UGOSM_fpr1, UGOSM_tpr1, repeated, folds):
+    n_classes = ['CUN', 'UGOSM']
+    # plotdict_tpr1 = dict()
+    # plotdict_fpr1 = dict()
 
     plotdict_tpr1 = CUN_tpr1, UGOSM_tpr1
     plotdict_fpr1 = CUN_fpr1, UGOSM_fpr1
 
+    n_classes = ['CUN', 'UGOSM']
     plotdict_tpr = dict()
     plotdict_fpr = dict()
 
@@ -462,28 +475,41 @@ def plot_roc_center(testlabels, probabilties, plotdict_tpr1, plotdict_fpr1, plot
     fig, ax = plt.subplots()
 
     ax.plot([0, 1], [0, 1], 'k--')
+    # ax.set_xlim([0.0, 1.0])
+    # ax.set_ylim([0.0, 1.05])
     ax.set_xlabel('False Positive Rate')
     ax.set_ylabel('True Positive Rate')
+    ax.set_title('Receiver operating characteristic example')
 
-    # for k1 in range(len(testlist)):
-    #     for i1 in range(len(n_classes)):
-    #         ax.plot(fpru[k1][i1], tpru[k1][i1], label='_nolegend_', color=colorrange[i1])
-    #         ax.plot(plotdict_fpr[k1][i1], plotdict_tpr[k1][i1], color=colorrange[i1])
+    for k1 in range(len(testlist)):
+        for i1 in range(len(n_classes)):
+            ax.plot(fpru[k1][i1], tpru[k1][i1], label='_nolegend_', color=colorrange[i1])
+
+            # ax.plot(PDCUN_fpr[i], PDCUN_fpr[i],  marker="o", markersize="12")
+            ax.plot(plotdict_fpr[k1][i1], plotdict_tpr[k1][i1], color=colorrange[i1])  # ,marker="o", markersize="12")
+
+    # plotdict_tpr1 = ADUGOSM_tpr1,ADUMCG_tpr1,PDCUN_tpr1,PDUGOSM_tpr1,PDUMCG_tpr1
+    # plotdict_fpr1 = ADUGOSM_fpr1,ADUMCG_fpr1,PDCUN_tpr1,PDUGOSM_fpr1,PDUMCG_fpr1
+
+    # for i2 in range(len(n_classes)):
+    #    ax.plot(fpr1[i2], tpr1[1], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[1], n_classes[1]),color=colorrange2[i2])
+    #    ax.plot(plotdict_fpr1c[1], plotdict_tpr1[1], color=colorrange2[1],marker="o", markersize="12")
 
     ax.plot(fpr1[1], tpr1[1], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[1], n_classes[1]),
             color=colorrange2[1])
-    ax.plot(plotdict_fpr1[1], plotdict_tpr1[1], color=colorrange2[1],markeredgewidth=1.0,markeredgecolor='k',marker="o", markersize="12")
+    ax.plot(plotdict_fpr1[1], plotdict_tpr1[1], color=colorrange2[1], marker="o", markersize="12")
 
-    ax.legend(loc="best")
+    ax.legend(loc="right")
     ax.grid(False)
-    fig.savefig('roc_centre.png')
+    fig.savefig('roc6class.png')
+    # ax.grid(alpha=.4)
     plt.show()
 
 
 def confusionmatrixd(test, predicted):
-    PDCUNPDCUN, PDCUNPDUGOSM, PDUGOSMPDCUN, PDUGOSMPDUGOSM = confusion_matrix(test, predicted,
-                                                                              labels=['PDCUN', 'PDUGOSM']).ravel()
-    return PDCUNPDCUN, PDCUNPDUGOSM, PDUGOSMPDCUN, PDUGOSMPDUGOSM
+    HCHC,HCDCUN,HCPDUGOSM,PDCUNHC,PDCUNPDCUN,PDCUNPDUGOSM,PDUGOSMHC,PDUGOSMPDCUN,PDUGOSMPDUGOSM = confusion_matrix(test, predicted, labels=['HC','PDCUN', 'PDUGOSM']).ravel()
+    return HCHC,HCDCUN,HCPDUGOSM,PDCUNHC,PDCUNPDCUN,PDCUNPDUGOSM,PDUGOSMHC,PDUGOSMPDCUN,PDUGOSMPDUGOSM
+
 
 def confusionmatrix_61class_d(testlabelmatrix, predictedlabelmatrix):
     testlabelsdsinglec = np.concatenate(list(chain.from_iterable(zip(*testlabelmatrix))), axis=0)
@@ -491,31 +517,39 @@ def confusionmatrix_61class_d(testlabelmatrix, predictedlabelmatrix):
     np.seterr(divide='ignore', invalid='ignore')
 
 
-    PDCUNPDCUN,PDCUNPDUGOSM,PDUGOSMPDCUN,PDUGOSMPDUGOSM = confusionmatrixd(
-        testlabelsdsinglec, predicteddsinglec)
 
-    nPDCUN_fpr = (PDUGOSMPDCUN)/(PDUGOSMPDCUN+PDUGOSMPDUGOSM)
-    nPDCUN_tpr = (PDCUNPDCUN)/(PDCUNPDCUN+PDCUNPDUGOSM)
+    HCHC,HCPDCUN,HCPDUGOSM,PDCUNHC,PDCUNPDCUN,PDCUNPDUGOSM,PDUGOSMHC,PDUGOSMPDCUN,PDUGOSMPDUGOSM  = confusionmatrixd(testlabelsdsinglec,predicteddsinglec)
 
+    nHC_fpr = (PDCUNHC + PDUGOSMHC) / (PDCUNHC + PDUGOSMHC + PDCUNPDCUN + PDCUNPDUGOSM + PDUGOSMPDCUN + PDUGOSMPDUGOSM)
+    nHC_tpr = (HCHC) / (HCHC + HCPDCUN + HCPDUGOSM)
 
-    nPDUGOSM_fpr = (PDCUNPDUGOSM)/(PDCUNPDUGOSM+PDCUNPDCUN)
-    nPDUGOSM_tpr = (PDUGOSMPDUGOSM)/(PDUGOSMPDUGOSM+PDUGOSMPDCUN)
+    nPDCUN_fpr = (HCPDCUN + PDUGOSMPDCUN) / (HCPDCUN + PDUGOSMPDCUN + HCHC + HCPDUGOSM + PDUGOSMHC + PDUGOSMPDUGOSM)
+    nPDCUN_tpr = (PDCUNPDCUN) / (PDCUNPDCUN + PDCUNHC + PDCUNPDUGOSM)
+
+    nPDUGOSM_fpr = (HCPDUGOSM + PDCUNPDUGOSM) / (HCPDUGOSM + PDCUNPDUGOSM + HCHC + HCPDCUN + PDCUNPDCUN + PDCUNHC)
+    nPDUGOSM_tpr = (PDUGOSMPDUGOSM) / (PDUGOSMPDUGOSM + PDUGOSMHC + PDUGOSMPDCUN)
 
     #############################
+    HC_fpr = nHC_fpr
+    HC_tpr = nHC_tpr
+
     PDCUN_fpr = nPDCUN_fpr
     PDCUN_tpr = nPDCUN_tpr
 
     PDUGOSM_fpr = nPDUGOSM_fpr
     PDUGOSM_tpr = nPDUGOSM_tpr
 
-    return PDCUN_fpr,PDCUN_tpr,PDUGOSM_fpr,PDUGOSM_tpr
 
+    return HC_fpr,HC_tpr,PDCUN_fpr,PDCUN_tpr,PDUGOSM_fpr,PDUGOSM_tpr
 
 def confusionmatrix_6class_d(testlabelmatrix, predictedlabelmatrix):
     testlist = list(chain.from_iterable(zip(*testlabelmatrix)))
     predictedlist = list(chain.from_iterable(zip(*predictedlabelmatrix)))
     # storing the values
     np.seterr(divide='ignore', invalid='ignore')
+
+    HC_tpr = dict()
+    HC_fpr = dict()
 
     PDCUN_tpr = dict()
     PDCUN_fpr = dict()
@@ -524,39 +558,44 @@ def confusionmatrix_6class_d(testlabelmatrix, predictedlabelmatrix):
     PDUGOSM_fpr = dict()
 
     for i in range(len(testlist)):
-        PDCUNPDCUN,PDCUNPDUGOSM,PDUGOSMPDCUN,PDUGOSMPDUGOSM = confusionmatrixd(
+        HCHC, HCPDCUN, HCPDUGOSM, PDCUNHC, PDCUNPDCUN, PDCUNPDUGOSM, PDUGOSMHC, PDUGOSMPDCUN, PDUGOSMPDUGOSM = confusionmatrixd(
             testlist[i], predictedlist[i])
 
-        nPDCUN_fpr = (PDUGOSMPDCUN)/(PDUGOSMPDCUN+PDUGOSMPDUGOSM)
-        nPDCUN_tpr = (PDCUNPDCUN)/(PDCUNPDCUN+PDCUNPDUGOSM)
+        nHC_fpr = (PDCUNHC + PDUGOSMHC) / (
+                    PDCUNHC + PDUGOSMHC + PDCUNPDCUN + PDCUNPDUGOSM + PDUGOSMPDCUN + PDUGOSMPDUGOSM)
+        nHC_tpr = (HCHC) / (HCHC + HCPDCUN + HCPDUGOSM)
 
+        nPDCUN_fpr = (HCPDCUN + PDUGOSMPDCUN) / (HCPDCUN + PDUGOSMPDCUN + HCHC + HCPDUGOSM + PDUGOSMHC + PDUGOSMPDUGOSM)
+        nPDCUN_tpr = (PDCUNPDCUN) / (PDCUNPDCUN + PDCUNHC + PDCUNPDUGOSM)
 
-        nPDUGOSM_fpr = (PDCUNPDUGOSM)/(PDCUNPDUGOSM+PDCUNPDCUN)
-        nPDUGOSM_tpr = (PDUGOSMPDUGOSM)/(PDUGOSMPDUGOSM+PDUGOSMPDCUN)
+        nPDUGOSM_fpr = (HCPDUGOSM + PDCUNPDUGOSM) / (HCPDUGOSM + PDCUNPDUGOSM + HCHC + HCPDCUN + PDCUNPDCUN + PDCUNHC)
+        nPDUGOSM_tpr = (PDUGOSMPDUGOSM) / (PDUGOSMPDUGOSM + PDUGOSMHC + PDUGOSMPDCUN)
 
         #############################
+        HC_fpr[i] = nHC_fpr
+        HC_tpr[i] = nHC_tpr
+
         PDCUN_fpr[i] = nPDCUN_fpr
         PDCUN_tpr[i] = nPDCUN_tpr
-
 
         PDUGOSM_fpr[i] = nPDUGOSM_fpr
         PDUGOSM_tpr[i] = nPDUGOSM_tpr
 
-    return PDCUN_fpr,PDCUN_tpr,PDUGOSM_fpr,PDUGOSM_tpr
+    return HC_fpr,HC_tpr,PDCUN_fpr,PDCUN_tpr,PDUGOSM_fpr,PDUGOSM_tpr
 
+def disease_dict(HC_fpr,HC_tpr,PDCUN_fpr,PDCUN_tpr,PDUGOSM_fpr,PDUGOSM_tpr, HC_fpr1,HC_tpr1,PDCUN_fpr1,PDCUN_tpr1,PDUGOSM_fpr1,PDUGOSM_tpr1, repeated, folds):
+    n_classes=['HC','PDCUN', 'PDUGOSM']
 
-def disease_dict(PDCUN_fpr, PDCUN_tpr, PDUGOSM_fpr, PDUGOSM_tpr, PDCUN_fpr1,
-                 PDCUN_tpr1, PDUGOSM_fpr1, PDUGOSM_tpr1, repeated, folds):
-
-    plotdict_tpr1 = PDCUN_tpr1, PDUGOSM_tpr1
-    plotdict_fpr1 = PDCUN_fpr1, PDUGOSM_fpr1
+    plotdict_tpr1 = HC_tpr1, PDCUN_tpr1, PDUGOSM_tpr1
+    plotdict_fpr1 = HC_fpr1, PDCUN_fpr1, PDUGOSM_fpr1
 
     plotdict_tpr = dict()
     plotdict_fpr = dict()
 
+    # for j in range(len(repeated)*folds):
     for j in range(repeated * folds):
-        plotdict_tpr[j] = PDCUN_tpr[j], PDUGOSM_tpr[j]
-        plotdict_fpr[j] = PDCUN_fpr[j], PDUGOSM_fpr[j]
+        plotdict_tpr[j] = HC_tpr[j], PDCUN_tpr[j], PDUGOSM_tpr[j]
+        plotdict_fpr[j] = HC_fpr[j], PDCUN_fpr[j], PDUGOSM_fpr[j]
 
     return plotdict_tpr1, plotdict_fpr1, plotdict_tpr, plotdict_fpr
 
@@ -570,27 +609,32 @@ def plot_roc_disease(testlabels, probabilties,plotdict_tpr1, plotdict_fpr1,plotd
     fpru = dict()
     tpru = dict()
     roc_aucu = dict()
+
+    n_classes = ['HC', 'PDCUN', 'PDUGOSM']
+
+    # structures
+    fpr = dict()
+
+    tpr = dict()
+
+    roc_auc = dict()
+
+    fpr1 = dict()
+
+    tpr1 = dict()
+
+    roc_auc1 = dict()
+
+    colorrange = ['green', 'red', 'blue']
+
     for k in range(len(testlist)):
 
-        n_classes = ['PDCUN', 'PDUGOSM']
 
-        # structures
-        fpr = dict()
-
-        tpr = dict()
-
-        roc_auc = dict()
-
-        fpr1 = dict()
-
-        tpr1 = dict()
-
-        roc_auc1 = dict()
-
-        colorrange = ['green', 'red']
-        colorrange2 = ['lightgreen', 'pink']
+        colorrange2 = ['green', 'red', 'blue']
         # for all the rocs from k fold
         for i in range(len(n_classes)):
+            # dictionary fpr tpr and roc calcualted per class per model and then stored in a bigger dict
+            # Dict of Dict
             fpr[i], tpr[i], _ = roc_curve(testlist[k], probabiltylist[k][:, i], pos_label=n_classes[i],
                                           drop_intermediate=True)
             roc_auc[i] = auc(fpr[i], tpr[i])
@@ -610,16 +654,19 @@ def plot_roc_disease(testlabels, probabilties,plotdict_tpr1, plotdict_fpr1,plotd
     ax.plot([0, 1], [0, 1], 'k--')
     ax.set_xlabel('False Positive Rate')
     ax.set_ylabel('True Positive Rate')
+    ax.set_title('Receiver operating characteristic example')
 
+    for i2 in range(len(n_classes)):
+        ax.plot(fpr1[i2], tpr1[i2], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[i2], n_classes[i2]),
+                color=colorrange2[i2])
+        ax.plot(plotdict_fpr1[i2], plotdict_tpr1[i2], color=colorrange2[i2], marker="o", markersize="12")
 
-    ax.plot(fpr1[1], tpr1[1], label='ROC curve (AUC = %0.2f) for %s' % (roc_auc1[1], n_classes[1]),
-                color=colorrange2[1])
-    ax.plot(plotdict_fpr1[1], plotdict_tpr1[1], color=colorrange2[1],markeredgewidth=1.0,markeredgecolor='k',marker="o", markersize="12")
-
-    ax.legend(loc="best")
+    ax.legend(loc="right")
     ax.grid(False)
-    fig.savefig('roc_disease.png')
+    fig.savefig('roc6disease.png')
+    # ax.grid(alpha=.4)
     plt.show()
+    return roc_aucu
 
 
 def analytical_average_auc(roc_aucu, n_classes):
@@ -633,8 +680,7 @@ def analytical_average_auc(roc_aucu, n_classes):
 
 
 # single model. For average you can simply do average prototype and plot with average eigen values and eigen vectors
-def visualizeSinglemodeld(pipeline,model, data, labels,typeofdata,ymin,ymax):
-
+def visualizeSinglemodeld(pipeline,model, data, labels,typeofdata,ymin,ymax, HCindices):
     data = pipeline[0].fit_transform(data)
     transformed_data = model.transform(data, True)
 
@@ -643,30 +689,44 @@ def visualizeSinglemodeld(pipeline,model, data, labels,typeofdata,ymin,ymax):
     y_d = transformed_data[:, 1]
 
     transformed_model = transform1(model.prototypes_, pipeline[1].eigenvalues_, pipeline[1].eigenvectors_, True)
-    #transformed_model = model.transform(model.prototypes_,True)
     x_m = transformed_model[:, 0]
     y_m = transformed_model[:, 1]
 
     fig, ax = plt.subplots()
 
-    labelss = ['PDCUN_late', 'PDUGOSM_early']
-    colors = ['deeppink', 'limegreen']
+    colors = ['lightgreen','red','orange']
+    colorsHC = ['darkviolet','teal']
+    # check the ordering from 4 class
+    labelHC = ['HCUGOSM','HCCUN']
+    labelss = ['HC','PDCUN_late','PDUGOSM_early']
+
 
     # check the ordering from 4 class
     plt.rcParams['lines.solid_capstyle'] = 'round'
 
     for i, cls in enumerate(model.classes_):
         ii = cls == labels
-        ax.scatter(
-            x_d[ii],
-            y_d[ii],
-            c="white",
-            s=200,
-            alpha=0.37,
-            edgecolors=colors[i],
-            linewidth=2.5,
-            label=labelss[i]
-        )
+        if(i == 0):
+            for hc in range(len(HCindices)):
+                ax.scatter(
+                x_d[HCindices[hc]],
+                y_d[HCindices[hc]],
+                c="white",
+                s=200,
+                alpha=0.37,
+                edgecolors=colorsHC[hc],
+                linewidth=2.5,
+                label = labelHC[hc])
+        else:
+            ax.scatter(
+                x_d[ii],
+                y_d[ii],
+                c="white",
+                s=200,
+                alpha=0.37,
+                edgecolors=colors[i],
+                linewidth=2.5,
+                label = labelss[i])
 
 
     for i, txt in enumerate(labelss):
@@ -679,6 +739,7 @@ def visualizeSinglemodeld(pipeline,model, data, labels,typeofdata,ymin,ymax):
     ax.legend()
     ax.grid(True)
     fig.savefig('disease_single_model' + typeofdata + '.png')
+
 
 
 # removing the z transform
@@ -721,14 +782,15 @@ def visualizeSinglemodelc(pipeline,model, data, labels,typeofdata):
     for i, txt in enumerate(labelss):
         ax.annotate(labelss[i], (x_m[i], y_m[i]))
     ax.scatter(x_m, y_m, c=colors, s=500, alpha=0.8, edgecolors="black")
-    ax.set_xlabel("Projection on the 1st Eigenvector of Λ")
+    ax.set_xlabel("Projection on the 1st Eigenvector of  Λ")
     ax.set_ylabel("Projection on the 2nd Eigenvector of Λ")
     ax.legend()
     ax.grid(True)
+
     fig.savefig('center_singlemodel' + typeofdata + '.png')
 
 
-# a function to plot the confusion matrix for centre
+
 def plot_confusionmatrix_centre(testlabels, predicted, accuracieslist):
     accuracies_one = list(chain.from_iterable(zip(*accuracieslist)))
     print(sum(accuracies_one) / len(accuracies_one))
@@ -747,15 +809,16 @@ def plot_confusionmatrix_centre(testlabels, predicted, accuracieslist):
     # Transform to df for easier plotting
     cm_df = pd.DataFrame(cmc_c, index=['CUN', 'UGOSM'], columns=['CUN', 'UGOSM'])
 
-    plt.figure(figsize=(8,6))
+    plt.figure()
     sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
 
     plt.title('center data')
     plt.ylabel('True label')
 
     plt.xlabel('Predicted label')
-    plt.show()
     plt.savefig('confusion_matrix_toy_centre.png')
+    plt.show()
+
 
 # a function to plot the confusion matrix for centre
 def plot_confusionmatrix_disease(testlabels, predicted, accuracieslist):
@@ -765,40 +828,39 @@ def plot_confusionmatrix_disease(testlabels, predicted, accuracieslist):
     test_list = np.concatenate(list(chain.from_iterable(zip(*testlabels))), axis=0)
     predicted_list = np.concatenate(list(chain.from_iterable(zip(*predicted))), axis=0)
 
-    PDCUNPDCUN, PDCUNPDUGOSM, PDUGOSMPDCUN, PDUGOSMPDUGOSM = confusionmatrixd(test_list,
-                                                                              predicted_list)
+    HCHC, HCDCUN, HCPDUGOSM, PDCUNHC, PDCUNPDCUN, PDCUNPDUGOSM, PDUGOSMHC, PDUGOSMPDCUN, PDUGOSMPDUGOSM = confusionmatrixd(
+        test_list, predicted_list)
 
-    cmc_d = np.array([[PDCUNPDCUN, PDCUNPDUGOSM],
-                      [PDUGOSMPDCUN, PDUGOSMPDUGOSM]])
+    cmc_d = np.array([[HCHC, HCDCUN, HCPDUGOSM],
+                      [PDCUNHC, PDCUNPDCUN, PDCUNPDUGOSM],
+                      [PDUGOSMHC, PDUGOSMPDCUN, PDUGOSMPDUGOSM]])
 
     cmc_d = cmc_d.astype('float') / cmc_d.sum(axis=1)[:, np.newaxis]
 
-    # Transform to df for easier plotting
-    cm_df = pd.DataFrame(cmc_d, index=['PDCUN (L)', 'PDUGOSM (E)'], columns=['PDCUN (L)', 'PDUGOSM (E)'])
-    plt.figure(figsize=(8,6))
+    cm_df = pd.DataFrame(cmc_d, index=['HC', 'PDCUN (L)', 'PDUGOSM (E)'], columns=['HC', 'PDCUN (L)', 'PDUGOSM (E)'])
+
+    plt.figure()
     sns.heatmap(cm_df, fmt='.2%', annot=True, cmap='Blues', cbar=False)
 
     plt.title('Disease data')
     plt.ylabel('True label')
 
     plt.xlabel('Predicted label')
+    plt.savefig('confusion_matrix_toy_disease.png')
     plt.show()
-    plt.savefig('confusion_matrix_2class_disease.png')
 
 
-
-
-# Plot the eigenvalues of the eigenvectors of the relevance matrix.
 def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda, std, d, typeofdata, ymin, ymax):
+
 
 
     fig, ax = plt.subplots()
     ax.bar(range(0, len(eigenvalues)), eigenvalues)
     if d == "disease":
         for i in range(3):
-            plt.text(i , eigenvalues[i],  "{:.2f}".format(eigenvalues[i]),fontsize=16)
+            plt.text(i , eigenvalues[i],  "{:.2f}".format(eigenvalues[i]),fontsize=14)
     else:
-        plt.text(0, eigenvalues[0], "{:.2f}".format(eigenvalues[0]),fontsize=16)
+        plt.text(0, eigenvalues[0], "{:.2f}".format(eigenvalues[0]),fontsize=14)
     ax.set_ylim(0, 1)
     ax.set_ylabel("Eigenvalue")
     ax.set_xlabel("Feature")
@@ -809,7 +871,7 @@ def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda, std
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[0, :])
     for i, v in enumerate(np.linspace(0, 35, 35)):
-        plt.text(i, eigenvectors[0, i], "{:.2f}".format(eigenvectors[0, i]), color='k', fontsize=16)
+        plt.text(i, eigenvectors[0, i], "{:.2f}".format(eigenvectors[0, i]), color='k', fontsize=14)
     ax.set_ylim(ymin[0], ymax[0])
     ax.axhline(0, color='k')
     ax.set_ylabel("Weight")
@@ -821,7 +883,7 @@ def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda, std
     fig, ax = plt.subplots()
     ax.bar(feature_names, eigenvectors[1, :])
     for i, v in enumerate(np.linspace(0, 35, 35)):
-        plt.text(i, eigenvectors[1, i], "{:.2f}".format(eigenvectors[1, i]), color='k', fontsize=16)
+        plt.text(i, eigenvectors[1, i], "{:.2f}".format(eigenvectors[1, i]), color='k', fontsize=14)
     ax.set_ylim(ymin[1], ymax[1])
     ax.axhline(0,color='k')
     ax.set_ylabel("Weight")
@@ -835,7 +897,7 @@ def ploteigenvalues(eigenvalues, eigenvectors, feature_names, averagelambda, std
     for i, v in enumerate(np.linspace(0, 35, 35)):
         plt.text(i, averagelambda[i] , "{:.2f}".format(averagelambda[i]),
                  ha='center',
-                 va="bottom", color='forestgreen', fontsize=16)
+                 va="bottom", color='forestgreen', fontsize=15)
     ax.set_ylim(ymin[2], ymax[2])
     ax.set_ylabel("Relevance")
     ax.set_xlabel("Diagonal elements of Λ")
